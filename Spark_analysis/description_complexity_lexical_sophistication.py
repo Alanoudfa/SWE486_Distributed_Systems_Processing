@@ -16,7 +16,7 @@ spark = SparkSession.builder \
     .appName("TF-IDF Lexical Sophistication Analysis") \
     .getOrCreate()
 
-# Load the Dataset (Modify the path as necessary)
+# Load the Dataset 
 df = spark.read.csv("/path/to/dataset.csv", header=True, inferSchema=True)
 
 # Filter out rows with null captions

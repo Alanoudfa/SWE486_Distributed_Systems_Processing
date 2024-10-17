@@ -1,86 +1,65 @@
-import pandas as pd
-import dask.dataframe as dd
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 # Objective: Analyze lexical sophistication in Arabic and English descriptions using TF-IDF scores.
 # Business Impact: Understanding lexical sophistication helps businesses tailor content strategies and improve engagement by using distinctive vocabulary.
 
-# Load the dataset
-data = pd.read_csv('/Users/ruba/Desktop/processed_dataset_0_12241239_v2.csv')
+import dask.dataframe as dd
+from sklearn.feature_extraction.text import TfidfVectorizer
+import pandas as pd
+import numpy as np
 
-# Convert the pandas DataFrame to a Dask DataFrame with one partition
-df = dd.from_pandas(pd.DataFrame(data), npartitions=1)
+# Load the Dataset 
+df = spark.read.csv("/path/to/dataset.csv", header=True, inferSchema=True)
 
-# Initialize TF-IDF vectorizers for English and Arabic
-tfidf_en = TfidfVectorizer()
+# Drop rows with missing values in Arabic and English captions
+df = df.dropna(subset=['caption_ar', 'caption_en'])
+
+# Get the first 10 Arabic and English captions for analysis
+captions_ar = df['caption_ar'].head(10)  # No need to use compute() after head()
+captions_en = df['caption_en'].head(10)  # No need to use compute() after head()
+
+# Initialize the TF-IDF vectorizer for both languages
 tfidf_ar = TfidfVectorizer()
+tfidf_en = TfidfVectorizer()
 
-# Fit the TF-IDF vectorizer and transform the English and Arabic captions
-tfidf_en_matrix = tfidf_en.fit_transform(df['caption_en'].compute())
-tfidf_ar_matrix = tfidf_ar.fit_transform(df['caption_ar'].compute())
+# Fit and transform the first 10 Arabic and English captions using TF-IDF
+tfidf_ar_matrix = tfidf_ar.fit_transform(captions_ar)
+tfidf_en_matrix = tfidf_en.fit_transform(captions_en)
 
-# Calculate the TF-IDF scores for English and Arabic captions
-tfidf_en_scores = tfidf_en_matrix.sum(axis=1).A1
-tfidf_ar_scores = tfidf_ar_matrix.sum(axis=1).A1
+# Convert the TF-IDF matrices to arrays for easier manipulation
+tfidf_ar_array = tfidf_ar_matrix.toarray()
+tfidf_en_array = tfidf_en_matrix.toarray()
 
-# Create Dask DataFrames for the results
-result_en = dd.from_pandas(pd.DataFrame({'caption_en': df['caption_en'].compute(), 'tfidf_en': tfidf_en_scores}), npartitions=1)
-result_ar = dd.from_pandas(pd.DataFrame({'caption_ar': df['caption_ar'].compute(), 'tfidf_ar': tfidf_ar_scores}), npartitions=1)
+# Create a DataFrame for Arabic captions and their corresponding TF-IDF scores
+result_ar_df = pd.DataFrame({
+    'caption_ar': captions_ar,
+    'tfidf_ar': list(tfidf_ar_array)  # Store TF-IDF scores in a list
+})
 
-# Print the results
-print(result_ar.compute())
-print(result_en.compute())
+# Create a DataFrame for English captions and their corresponding TF-IDF scores
+result_en_df = pd.DataFrame({
+    'caption_en': captions_en,
+    'tfidf_en': list(tfidf_en_array)  # Store TF-IDF scores in a list
+})
 
-# Second part: Calculate average TF-IDF scores for both languages
-ddf = pd.read_csv("/Users/ruba/Desktop/processed_dataset_0_12241239_v2.csv")
-ddf = dd.from_pandas(ddf, npartitions=1)
+# Function to print TF-IDF results in a structured format
+def print_tfidf_results(df, caption_col, tfidf_col):
+    # Print the header
+    print("+{:-<40}+{:-<70}+".format('', ''))
+    print("| {:<38} | {:<68} |".format(caption_col, tfidf_col))
+    print("+{:-<40}+{:-<70}+".format('', ''))
+    
+    # Iterate over the DataFrame and print each caption with its TF-IDF scores
+    for i, row in df.iterrows():
+        caption = row[caption_col]
+        tfidf_values = np.round(row[tfidf_col], 6)  # Round TF-IDF values for neatness
+        tfidf_str = ', '.join(map(str, tfidf_values.tolist()))  # Convert TF-IDF values to string
+        print("| {:<38} | {:<68} |".format(caption, tfidf_str))
+        print("+{:-<40}+{:-<70}+".format('', ''))
 
-# Filter for non-null captions
-ddf_filtered = ddf[ddf["caption_en"].notnull() & ddf["caption_ar"].notnull()]
+# Print TF-IDF results for Arabic captions
+print("TF-IDF Results for Arabic Captions:")
+print_tfidf_results(result_ar_df, 'caption_ar', 'tfidf_ar')
 
-# Stopwords for English and Arabic
-stopwords_en = [
-    "the", "and", "is", "in", "on", "with", "a", "of", "for", "to", 
-    "an", "at", "it", "his", "her", "that", "there", "by", 
-    "from", "its", "through", "as", "what", "this", "was", "were", 
-    "be", "are", "or", "but", "if", "about", "than", "so", "we", 
-    "you", "he", "she", "they", "i", "my", "me", "their", "our", 
-    "your", "all", "which", "when", "where", "how", "why", "has", "had", 
-    "not", "been", "can", "do", "does", "did", "some", "any", "such", "while"
-]
-
-stopwords_ar = [
-    "و", "في", "على", "من", "إلى", "ب", "عن", "أن", "هذا", 
-    "هذه", "ذلك", "تلك", "هو", "هي", "هم", "هن", "ما", "ماذا", 
-    "لماذا", "أين", "كيف", "متى", "كل", "كان", "يكون", "كانت", 
-    "ل", "لأن", "إذا", "قد", "لقد", "هل", "أو", "ثم", "أي", 
-    "بعض", "عند", "منذ", "لكن", "مع", "فيها", "فيه", "بين", 
-    "إلا", "حتى", "إذا", "بعد", "قبل", "أكثر", "كما", "مثل", "أيضا", 
-    "الذي", "به", "التي", "ذات", "أثناء", "ذو", "أولئك", "بها"
-]
-
-# Tokenize and filter stopwords for both languages
-ddf_filtered['tokens_en'] = ddf_filtered['caption_en'].str.lower().str.split()
-ddf_filtered['tokens_ar'] = ddf_filtered['caption_ar'].str.lower().str.split()
-
-ddf_filtered['filtered_en'] = ddf_filtered['tokens_en'].apply(
-    lambda tokens: [word for word in tokens if word not in stopwords_en], meta=('x', 'object')
-)
-
-ddf_filtered['filtered_ar'] = ddf_filtered['tokens_ar'].apply(
-    lambda tokens: [word for word in tokens if word not in stopwords_ar], meta=('x', 'object')
-)
-
-# Compute the TF-IDF matrices for filtered words
-tfidf_en = TfidfVectorizer(analyzer=lambda x: x)
-tfidf_en_matrix = tfidf_en.fit_transform(ddf_filtered['filtered_en'].compute()).toarray()
-
-tfidf_ar = TfidfVectorizer(analyzer=lambda x: x)
-tfidf_ar_matrix = tfidf_ar.fit_transform(ddf_filtered['filtered_ar'].compute()).toarray()
-
-# Calculate average TF-IDF scores
-avg_tfidf_en = tfidf_en_matrix.mean(axis=0).mean()
-avg_tfidf_ar = tfidf_ar_matrix.mean(axis=0).mean()
-
-print(f"Average TF-IDF score for English captions: {avg_tfidf_en}")
-print(f"Average TF-IDF score for Arabic captions: {avg_tfidf_ar}")
+# Print TF-IDF results for English captions
+print("\nTF-IDF Results for English Captions:")
+print_tfidf_results(result_en_df, 'caption_en', 'tfidf_en')
